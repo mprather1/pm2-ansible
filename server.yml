@@ -1,0 +1,62 @@
+---
+- hosts: all
+
+  vars:
+    - homeDir: /home/mike
+    - appDir : node-test
+    - repo: node-test
+    - account: mprather1
+    - privateKey: /home/mike/.ssh/id_rsa
+    - appName: app
+
+
+  tasks:
+  # - name: Install Packages
+  #   apt: name={{ item }} update_cache=yes state=latest
+  #   with_items:
+  #     - build-essential
+  #     - npm
+  #     - nodejs-legacy
+  #     - git
+  #     - mcrypt
+  #     - nginx
+  #     - curl
+
+  - name: Install pm2
+    npm: name=pm2 global=yes production=yes
+
+  - name: Create APP Directory
+    become: true
+    become_user: mike
+    file: path={{homeDir}}/{{appDir}} state=directory
+
+  - name: Copy Private Key
+    copy: src={{privateKey}} dest={{homeDir}} mode=0600
+
+  - name: Git Clone Repo
+    git: repo=git@github.com:{{account}}/{{repo}}.git dest={{homeDir}}/{{appDir}} update=yes force=yes accept_hostkey=yes key_file={{homeDir}}/id_rsa
+    register: git_finished
+
+  - name: Running NPM install
+    npm: 
+      path={{homeDir}}/{{appDir}}
+    register: npm_finished
+    when: git_finished.changed
+
+  - name: Stop APP
+    become: yes
+    become_user: mike  
+    command: pm2 stop {{appName}} 
+    ignore_errors: yes
+    when: npm_finished.changed
+    register: stopped
+
+  - name: Start APP
+    become: yes
+    become_user: mike
+    environment: 
+      PORT: 8000
+    command: pm2 start {{homeDir}}/{{appDir}}/server.js --name={{appName}}
+    ignore_errors: yes
+    when: stopped.changed
+    
